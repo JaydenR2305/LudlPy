@@ -107,7 +107,7 @@ class Controller:
 
         return self.await_response()
 
-    def get_speed(self, motor_ids: Sequence[str]) -> tuple[bool, Optional[list]]:
+    def get_speed(self, motor_ids: Sequence[str]) -> tuple[bool, Optional[list[int]]]:
         """
         :param motor_ids: The motors to read speeds from
         :return: A bool indicating whether execution was successful,
@@ -132,15 +132,38 @@ class Controller:
 
         return self.await_response()
 
+    def get_acceleration(self, motor_ids: Sequence[str]) -> tuple[bool, Optional[list[int]]]:
+        """
+        See get_speed()
+        """
+        self.stage_port.write(self._format_command_string(f"ACCEL {' '.join(motor_ids)}"))
+
+        response_types = ["int"]*len(motor_ids)
+        response = self.await_response(response_types)
+
+        return response
+
+    def set_acceleration(self, motor_id_acceleration_dictionary: dict[str, int]) -> tuple[bool, Optional[list]]:
+        """
+        See set_speed()
+        """
+        motor_parameters = [f"{motor_id} = {speed}" for motor_id, speed in motor_id_acceleration_dictionary.items()]
+
+        self.stage_port.write(self._format_command_string(f"ACCEL {' '.join(motor_parameters)}"))
+
+        return self.await_response()
+
 
 if __name__ == "__main__":
     stage = Controller("COM3")
 
+    # Send check
     check_successful, check_response = stage.send_check("X")
 
     if check_successful:
         print(check_response)
 
+    # Speed controls
     set_speed_successful, set_speed_response = stage.set_speed({"X": 10000})
 
     if set_speed_successful:
@@ -150,3 +173,14 @@ if __name__ == "__main__":
 
     if get_speed_successful:
         print(get_speed_response)
+
+    # Acceleration controls
+    set_acceleration_successful, set_acceleration_response = stage.set_acceleration({"Y": 5})
+
+    if set_acceleration_successful:
+        print("Successfully set Y motor acceleration!")
+
+    get_acceleration_successful, get_acceleration_response = stage.get_acceleration("Y")
+
+    if get_acceleration_successful:
+        print(get_acceleration_response)
