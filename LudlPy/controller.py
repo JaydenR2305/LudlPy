@@ -1,13 +1,22 @@
 # Jayden Roberts
 # 8/8/22
 
+from collections.abc import Sequence
 import serial
+from typing import Optional
 
-default_communication_parameters = {
+
+_default_communication_parameters = {
     "baudrate": 19200,
     "bytesize": serial.EIGHTBITS,
     "parity": serial.PARITY_NONE,
     "stopbits": serial.STOPBITS_TWO,
+}
+
+_cast_functions = {
+    "float": float,
+    "int": int,
+    "string": str
 }
 
 
@@ -23,7 +32,7 @@ class Controller:
         :return: The instantiated serial object.
         """
         port_connection = serial.Serial(
-            port=serial_port_name, **default_communication_parameters
+            port=serial_port_name, **_default_communication_parameters
         )
 
         return port_connection
@@ -36,29 +45,90 @@ class Controller:
         and converting the string to binary using the ASCII standard.
 
         :param command: The command string to be written to the buffer.
-        :return: Returns the response from the controller in ASCII formatting.
+        :return: The binary command string in ASCII formatting.
         """
         carriage_command = f"{command}\r"
         return carriage_command.encode("ASCII")
 
-    def await_response(self) -> str:
+    @staticmethod
+    def _format_response(response_arguments: list[str], response_types: Sequence[str]):
+        """
+        :param response_arguments: The response from the controller in list format
+        :param response_types: The types to cast the response_arguments to
+        :return: The formatted array
+        """
+        assert len(response_arguments) == len(response_types), \
+            "Response types must be equal in length to response arguments"
+
+        formatted_response = []
+
+        for response_argument, response_type in zip(response_arguments, response_types):
+            formatted_response.append(_cast_functions[response_type](response_argument))
+
+        return formatted_response
+
+    def await_response(self, response_types: Optional[Sequence[str]] = None) -> tuple[bool, Optional[list]]:
         """
         Return the response from some command.
 
-        :return: The response from the controller.
+        :param response_types: An optional sequence containing the requested types to cast for response arguments.
+        For example, we would want an integer when reading out a speed
+        :return: The response from the controller in a list form.
         """
         while True:
             if self.stage_port.in_waiting > 0:
-                return self.stage_port.readline().decode("ASCII")
+                response = self.stage_port.readline().decode("ASCII").split(" ")
 
-    def send_check(self, motor_id: str = "X") -> str:
+                reply_character = response[0]
+
+                if reply_character == ":A":
+                    executed_successfully = True
+                elif reply_character == ":N":
+                    executed_successfully = False
+                else:
+                    raise Exception(f"Unknown reply character: {reply_character}")
+
+                # Remove the reply character from the start of the list and the newline character at the end of the list
+                response = response[1:-1]
+
+                if executed_successfully and response_types:
+                    response = self._format_response(response, response_types)
+
+                return executed_successfully, response
+
+    def send_check(self, motor_id: str = "X") -> tuple[bool, Optional[list]]:
         """
         Ensure the connection to the controller has been established successfully.
 
         :param motor_id: Which stage dimension to use. Currently, "X" & "Y" are supported.
-        :return: The response from the controller.
+        :return: See await_response()
         """
         self.stage_port.write(self._format_command_string(f"RDSTAT {motor_id}"))
+
+        return self.await_response()
+
+    def get_speed(self, motor_ids: Sequence[str]) -> tuple[bool, Optional[list]]:
+        """
+        :param motor_ids: The motors to read speeds from
+        :return: A bool indicating whether execution was successful,
+        as well as a list of speeds from the requested motors.
+        """
+        self.stage_port.write(self._format_command_string(f"SPEED {' '.join(motor_ids)}"))
+
+        response_types = ["int"]*len(motor_ids)
+        response = self.await_response(response_types)
+
+        return response
+
+    def set_speed(self, motor_id_speed_dictionary: dict[str, int]) -> tuple[bool, Optional[list]]:
+        """
+        :param motor_id_speed_dictionary: A dictionary containing id - speed key value pairs
+        :return: A bool indicating whether execution was successful.
+        The response body is empty for a successful execution.
+        """
+        motor_parameters = [f"{motor_id} = {speed}" for motor_id, speed in motor_id_speed_dictionary.items()]
+
+        self.stage_port.write(self._format_command_string(f"SPEED {' '.join(motor_parameters)}"))
 
         return self.await_response()
 
@@ -66,5 +136,17 @@ class Controller:
 if __name__ == "__main__":
     stage = Controller("COM3")
 
-    response = stage.send_check("X")
-    print(response)
+    check_successful, check_response = stage.send_check("X")
+
+    if check_successful:
+        print(check_response)
+
+    set_speed_successful, set_speed_response = stage.set_speed({"X": 10000})
+
+    if set_speed_successful:
+        print("Successfully set X motor speed!")
+
+    get_speed_successful, get_speed_response = stage.get_speed("X")
+
+    if get_speed_successful:
+        print(get_speed_response)
