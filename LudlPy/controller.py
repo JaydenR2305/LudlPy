@@ -3,7 +3,7 @@
 
 from collections.abc import Sequence
 import serial
-from typing import Optional
+from typing import Optional, Union
 
 
 _default_communication_parameters = {
@@ -67,19 +67,33 @@ class Controller:
 
         return formatted_response
 
-    def await_response(self, response_types: Optional[Sequence[str]] = None) -> tuple[bool, Optional[list]]:
+    def await_response(self, response_types: Optional[Sequence[str]] = None, response_has_newline: bool = True) \
+            -> Union[tuple[bool, Optional[list]], str]:
         """
         Return the response from some command.
 
         :param response_types: An optional sequence containing the requested types to cast for response arguments.
         For example, we would want an integer when reading out a speed
+        :param response_has_newline: A boolean indicating
         :return: The response from the controller in a list form.
         """
         while True:
             if self.stage_port.in_waiting > 0:
-                response = self.stage_port.readline().decode("ASCII").split(" ")
+                if not response_has_newline:
+                    response = self.stage_port.read()
+                else:
+                    response = self.stage_port.readline()
 
-                reply_character = response[0]
+                response = response.decode("ASCII")
+
+                # Some commands return a single character response.
+                # These commands do not end with a newline and do not contain a reply character.
+                if not response_has_newline:
+                    return response
+
+                response_array = response.split(" ")
+
+                reply_character = response_array[0]
 
                 if reply_character == ":A":
                     executed_successfully = True
@@ -88,13 +102,15 @@ class Controller:
                 else:
                     raise Exception(f"Unknown reply character: {reply_character}")
 
-                # Remove the reply character from the start of the list and the newline character at the end of the list
-                response = response[1:-1]
+                if response_has_newline:
+                    # Remove the reply character from the start of the list and the newline character at the end of
+                    # the list
+                    response_array = response_array[1:-1]
 
                 if executed_successfully and response_types:
-                    response = self._format_response(response, response_types)
+                    response_array = self._format_response(response_array, response_types)
 
-                return executed_successfully, response
+                return executed_successfully, response_array
 
     def send_check(self, motor_id: str = "X") -> tuple[bool, Optional[list]]:
         """
@@ -153,6 +169,38 @@ class Controller:
 
         return self.await_response()
 
+    def move_relative(self, motor_id_position_dictionary: dict[str, int]) -> tuple[bool, Optional[list]]:
+        """
+
+        :param motor_id_position_dictionary: A dictionary containing id - coordinate pairs.
+        :return: A bool indicating whether execution was successful.
+        The response body is empty for a successful execution.
+        """
+        motor_parameters = [f"{motor_id} = {position}" for motor_id, position in motor_id_position_dictionary.items()]
+
+        self.stage_port.write(self._format_command_string(f"MOVE {' '.join(motor_parameters)}"))
+
+        return self.await_response()
+
+    def check_motor_status(self) -> tuple[bool, Optional[list]]:
+        """
+        Returns the status of the motors.
+        "B" means the motors are still running and "N" means the motors are free to receive commands.
+        """
+        self.stage_port.write(self._format_command_string("STATUS"))
+
+        return self.await_response(response_has_newline=False)
+
+    def await_motors_ready(self) -> None:
+        """
+        Returns when both motors are ready to receive commands
+        """
+        while True:
+            response = self.check_motor_status()
+
+            if response == "N":
+                return
+
 
 if __name__ == "__main__":
     stage = Controller("COM3")
@@ -184,3 +232,8 @@ if __name__ == "__main__":
 
     if get_acceleration_successful:
         print(get_acceleration_response)
+
+    stage.await_motors_ready()
+    stage.move_relative({"X": 0, "Y": 0})
+    stage.await_motors_ready()
+    print("Done moving")
