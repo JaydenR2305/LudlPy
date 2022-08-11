@@ -7,7 +7,8 @@ from typing import Optional, Union
 
 
 _default_communication_parameters = {
-    "baudrate": 19200,
+    "baudrate": 9600,  # This number varies from model to model.
+    # If you find that the provided example code doesn't run properly try other baud rates such as 19200
     "bytesize": serial.EIGHTBITS,
     "parity": serial.PARITY_NONE,
     "stopbits": serial.STOPBITS_TWO,
