@@ -170,8 +170,9 @@ class Controller:
 
         return self.await_response()
 
-    def move_relative(self, motor_id_position_dictionary: dict[str, int]) -> tuple[bool, Optional[list]]:
+    def move_absolute(self, motor_id_position_dictionary: dict[str, int]) -> tuple[bool, Optional[list]]:
         """
+        Move to the given coordinates in the absolute frame.
 
         :param motor_id_position_dictionary: A dictionary containing id - coordinate pairs.
         :return: A bool indicating whether execution was successful.
@@ -180,6 +181,20 @@ class Controller:
         motor_parameters = [f"{motor_id} = {position}" for motor_id, position in motor_id_position_dictionary.items()]
 
         self.stage_port.write(self._format_command_string(f"MOVE {' '.join(motor_parameters)}"))
+
+        return self.await_response()
+
+    def move_relative(self, motor_id_position_dictionary: dict[str, int]) -> tuple[bool, Optional[list]]:
+        """
+        Move to a given position relative to the current position.
+
+        :param motor_id_position_dictionary: A dictionary containing id - coordinate pairs.
+        :return: A bool indicating whether execution was successful.
+        The response body is empty for a successful execution.
+        """
+        motor_parameters = [f"{motor_id} = {position}" for motor_id, position in motor_id_position_dictionary.items()]
+
+        self.stage_port.write(self._format_command_string(f"MOVREL {' '.join(motor_parameters)}"))
 
         return self.await_response()
 
@@ -235,6 +250,6 @@ if __name__ == "__main__":
         print(get_acceleration_response)
 
     stage.await_motors_ready()
-    stage.move_relative({"X": 0, "Y": 0})
+    stage.move_absolute({"X": 0, "Y": 0})
     stage.await_motors_ready()
     print("Done moving")
