@@ -170,6 +170,21 @@ class Controller:
 
         return self.await_response()
 
+    def get_absolute_position(self, motor_ids: Sequence[str]) -> tuple[bool, list[int]]:
+        """
+        Get the current position of the stage
+        
+        :param motor_ids: The motors to read the position from
+        :return: A bool indicating whether execution was successful,
+        as well as a list of positions from the requested motors.
+        """
+        self.stage_port.write(self._format_command_string(f"WHERE {' '.join(motor_ids)}"))
+
+        response_types = ["int"]*len(motor_ids)
+        response = self.await_response(response_types)
+
+        return response
+    
     def move_absolute(self, motor_id_position_dictionary: dict[str, int]) -> tuple[bool, Optional[list]]:
         """
         Move to the given coordinates in the absolute frame.
